@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Код земли</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f2f0e7;color:#263326;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.app{width:min(600px,100%);margin:auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.logo{font-size:28px;font-weight:800}
+.levelbox{background:white;border-radius:16px;padding:15px;margin-bottom:12px}
+.level{font-size:21px;font-weight:800;margin-bottom:8px}
+.goal{font-size:17px}
+.goal b{font-size:20px}
+.bar{height:10px;background:#e0e3da;border-radius:10px;margin-top:10px;overflow:hidden}
+.fill{height:100%;width:0;background:#71965c;transition:.2s}
+.moves{margin-top:9px;color:#697166}
+.boardwrap{background:#dce2d4;padding:7px;border-radius:18px}
+.board{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;aspect-ratio:1}
+.cell{border:0;border-radius:9px;background:white;padding:0;display:flex;align-items:center;justify-content:center;font-size:clamp(23px,7vw,43px);cursor:pointer}
+.cell.selected{background:#d3e4c8;box-shadow:inset 0 0 0 3px #6e9459;transform:scale(.9)}
+.message{text-align:center;height:42px;padding:12px;color:#697166}
+.restart{width:100%;border:0;background:white;border-radius:13px;padding:13px;font-weight:700;font-size:15px}
+.modal{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:20px}
+.modal.show{display:flex}
+.modalcard{background:white;border-radius:22px;padding:25px;width:min(380px,100%);text-align:center}
+.modalcard button{width:100%;border:0;border-radius:13px;padding:13px;background:#71965c;color:white;font-weight:800}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+<header>
+<div class="logo">Код земли</div>
+<div>ТЕСТ 2</div>
+</header>
+
+<div class="levelbox">
+<div class="level">Уровень <span id="level">1</span></div>
+<div class="goal">Сливы: <b><span id="plums">0</span>/30</b></div>
+<div class="bar"><div id="fill" class="fill"></div></div>
+<div class="moves">Ходы: <b id="moves">20</b></div>
+</div>
+
+<div class="boardwrap">
+<div id="board" class="board"></div>
+</div>
+
+<div id="message" class="message"></div>
+
+<button id="restart" class="restart">Начать уровень заново</button>
+
+</div>
+
+<div id="modal" class="modal">
+<div class="modalcard">
+<h2 id="modalTitle"></h2>
+<p id="modalText"></p>
+<button id="modalButton"></button>
+</div>
+</div>
+
+<script>
+const SIZE=8;
+const TARGET=30;
+const START_MOVES=20;
+
+const TYPES=["plum","cherry","strawberry","bread","tractor"];
+
+const ICON={
+plum:"🍑",
+cherry:"🍒",
+strawberry:"🍓",
+bread:"🍞",
+tractor:"🚜"
+};
+
+let board=[];
+let selected=null;
+let busy=false;
+let level=1;
+let moves=START_MOVES;
+let plums=0;
+let finished=false;
+
+const boardEl=document.getElementById("board");
+const levelEl=document.getElementById("level");
+const plumsEl=document.getElementById("plums");
+const movesEl=document.getElementById("moves");
+const fillEl=document.getElementById("fill");
+const messageEl=document.getElementById("message");
+const modalEl=document.getElementById("modal");
+const modalTitle=document.getElementById("modalTitle");
+const modalText=document.getElementById("modalText");
+const modalButton=document.getElementById("modalButton");
+
+function sleep(ms){
+return new Promise(r=>setTimeout(r,ms));
+}
+
+function randomType(){
+return TYPES[Math.floor(Math.random()*TYPES.length)];
+}
+
+function makePiece(type){
+return {type};
+}
+
+function createBoard(){
+
+board=[];
+
+for(let r=0;r<SIZE;r++){
+
+board[r]=[];
+
+for(let c=0;c<SIZE;c++){
+
+let type;
+
+do{
+type=randomType();
+}
+while(
+(c>=2 &&
+board[r][c-1].type===type &&
+board[r][c-2].type===type)
+||
+(r>=2 &&
+board[r-1][c].type===type &&
+board[r-2][c].type===type)
+);
+
+board[r][c]=makePiece(type);
+
+}
+}
+}
+
+function render(){
+
+let html="";
+
+for(let r=0;r<SIZE;r++){
+for(let c=0;c<SIZE;c++){
+
+let p=board[r][c];
+
+let sel=
+selected &&
+selected.r===r &&
+selected.c===c
+?" selected":"";
+
+html+=
+'<button class="cell'+sel+'" data-r="'+r+'" data-c="'+c+'">'+
+(p?ICON[p.type]:"")+
+'</button>';
+
+}
+}
+
+boardEl.innerHTML=html;
+
+boardEl.querySelectorAll(".cell").forEach(el=>{
+el.onclick=()=>{
+clickCell(
+Number(el.dataset.r),
+Number(el.dataset.c)
+);
+};
+});
+
+levelEl.textContent=level;
+plumsEl.textContent=plums;
+movesEl.textContent=moves;
+fillEl.style.width=Math.min(100,plums/TARGET*100)+"%";
+}
+
+function clickCell(r,c){
+
+if(busy||finished||moves<=0)return;
+
+if(!selected){
+
+selected={r,c};
+render();
+return;
+}
+
+if(selected.r===r&&selected.c===c){
+
+selected=null;
+render();
+return;
+}
+
+const distance=
+Math.abs(selected.r-r)+
+Math.abs(selected.c-c);
+
+if(distance!==1){
+
+selected={r,c};
+render();
+return;
+}
+
+const a=selected;
+const b={r,c};
+
+selected=null;
+
+makeMove(a,b);
+}
+
+async function makeMove(a,b){
+
+busy=true;
+
+swap(a,b);
+
+let matches=findMatches();
+
+if(matches.size===0){
+
+swap(a,b);
+
+busy=false;
+
+render();
+
+message("Этот обмен не создаёт комбинацию");
+
+return;
+}
+
+/*
+ТОЛЬКО ЗДЕСЬ уменьшается количество ходов.
+*/
+moves--;
+
+render();
+
+await sleep(120);
+
+await removeMatches(matches);
+
+await resolve();
+
+render();
+
+/*
+Уровень НЕ меняется здесь.
+Проверяем только цель.
+*/
+if(plums>=TARGET){
+
+finished=true;
+busy=false;
+
+showSuccess();
+
+return;
+}
+
+if(moves<=0){
+
+finished=true;
+busy=false;
+
+showFailure();
+
+return;
+}
+
+busy=false;
+}
+
+function swap(a,b){
+
+let tmp=board[a.r][a.c];
+
+board[a.r][a.c]=board[b.r][b.c];
+board[b.r][b.c]=tmp;
+}
+
+function findMatches(){
+
+let result=new Set();
+
+for(let r=0;r<SIZE;r++){
+
+let c=0;
+
+while(c<SIZE){
+
+let p=board[r][c];
+
+if(!p){
+c++;
+continue;
+}
+
+let end=c+1;
+
+while(
+end<SIZE &&
+board[r][end] &&
+board[r][end].type===p.type
+){
+end++;
+}
+
+if(end-c>=3){
+
+for(let x=c;x<end;x++){
+result.add(r+","+x);
+}
+}
+
+c=end;
+}
+}
+
+for(let c=0;c<SIZE;c++){
+
+let r=0;
+
+while(r<SIZE){
+
+let p=board[r][c];
+
+if(!p){
+r++;
+continue;
+}
+
+let end=r+1;
+
+while(
+end<SIZE &&
+board[end][c] &&
+board[end][c].type===p.type
+){
+end++;
+}
+
+if(end-r>=3){
+
+for(let y=r;y<end;y++){
+result.add(y+","+c);
+}
+}
+
+r=end;
+}
+}
+
+return result;
+}
+
+async function removeMatches(matches){
+
+let count=0;
+
+for(let key of matches){
+
+let parts=key.split(",");
+
+let r=Number(parts[0]);
+let c=Number(parts[1]);
+
+let p=board[r][c];
+
+if(!p)continue;
+
+if(p.type==="plum"){
+count++;
+}
+
+board[r][c]=null;
+}
+
+plums+=count;
+
+render();
+
+await sleep(160);
+}
+
+async function resolve(){
+
+while(true){
+
+collapse();
+fill();
+
+render();
+
+await sleep(120);
+
+let matches=findMatches();
+
+if(matches.size===0)break;
+
+await removeMatches(matches);
+}
+}
+
+function collapse(){
+
+for(let c=0;c<SIZE;c++){
+
+let items=[];
+
+for(let r=SIZE-1;r>=0;r--){
+
+if(board[r][c]){
+items.push(board[r][c]);
+}
+}
+
+for(let r=SIZE-1;r>=0;r--){
+
+board[r][c]=
+items[SIZE-1-r]||null;
+}
+}
+}
+
+function fill(){
+
+for(let r=0;r<SIZE;r++){
+for(let c=0;c<SIZE;c++){
+
+if(!board[r][c]){
+board[r][c]=makePiece(randomType());
+}
+
+}
+}
+}
+
+function message(text){
+
+messageEl.textContent=text;
+
+setTimeout(()=>{
+messageEl.textContent="";
+},1800);
+}
+
+function showSuccess(){
+
+modalTitle.textContent="Уровень пройден";
+
+modalText.innerHTML=
+"Ты собрал <b>"+plums+
+"</b> слив. Цель 30 выполнена.";
+
+modalButton.textContent="Следующий уровень";
+
+modalEl.classList.add("show");
+}
+
+function showFailure(){
+
+modalTitle.textContent="Уровень не пройден";
+
+modalText.innerHTML=
+"Ходы закончились.<br><br>"+
+"Собрано слив: <b>"+plums+"</b> из 30.";
+
+modalButton.textContent="Начать заново";
+
+modalEl.classList.add("show");
+}
+
+function restart(){
+
+modalEl.classList.remove("show");
+
+selected=null;
+busy=false;
+moves=START_MOVES;
+plums=0;
+finished=false;
+
+createBoard();
+render();
+}
+
+modalButton.onclick=()=>{
+
+if(plums>=TARGET){
+
+/*
+Номер уровня изменяется ТОЛЬКО здесь.
+*/
+level++;
+
+}else{
+
+/*
+При проигрыше уровень остаётся тем же.
+*/
+}
+
+restart();
+};
+
+document.getElementById("restart").onclick=restart;
+
+createBoard();
+render();
+</script>
+
+</body>
+</html>

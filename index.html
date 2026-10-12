@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Код земли</title>
+
+<!-- ТУРБО-ПРЕДЗАГРУЗКА КАРТИНОК (Чтобы не было черных экранов) -->
+<link rel="preload" href="img/cover.jpg" as="image">
+<link rel="preload" href="img/bg.jpg" as="image">
+<link rel="preload" href="img/bg_farm.jpg" as="image">
+<link rel="preload" href="img/soil.png" as="image">
+<link rel="preload" href="img/barn.png" as="image">
+<link rel="preload" href="img/cherry.png" as="image">
+<link rel="preload" href="img/plum.png" as="image">
+<link rel="preload" href="img/strawberry.png" as="image">
+<link rel="preload" href="img/bread.png" as="image">
+<link rel="preload" href="img/tractor.png" as="image">
+<link rel="preload" href="img/sprout.png" as="image">
+<link rel="preload" href="img/tree_cherry.png" as="image">
+
+<!-- Подключаем стили и скрипты -->
+<link rel="stylesheet" href="style.css">
+<script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+<script src="game.js" defer></script>
+</head>
+<body>
+
+<div class="app-container">
+
+<!-- МЕНЮ -->
+<div id="screen-menu" class="screen active" style="background-image: url('img/cover.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat; justify-content: space-between;">
+    <div style="padding: 24px; display: flex; justify-content: flex-end; align-items: center;">
+        <div class="coin-balance">🪙 <span class="coin-val">0</span></div>
+    </div>
+    <div style="background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, transparent 100%); padding: 60px 24px 30px; width: 100%; display: flex; flex-direction: column; gap: 10px;">
+        <button class="btn btn-accent" onclick="showScreen('screen-levels')" style="padding: 18px; margin-bottom: 4px;">ИГРАТЬ</button>
+        <button class="btn btn-secondary" style="background: #e6f2e6; color: #1f3611; font-size: 18px;" onclick="showScreen('screen-farm')">🚜 МОЯ ФЕРМА</button>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button class="btn btn-secondary" style="font-size: 14px;" onclick="showScreen('screen-collection')">КОЛЛЕКЦИЯ</button>
+            <button class="btn btn-secondary" style="font-size: 14px;" onclick="showScreen('screen-blog')">БЛОГ ПРОЕКТА</button>
+        </div>
+    </div>
+</div>
+
+<!-- КАРТА УРОВНЕЙ -->
+<div id="screen-levels" class="screen screen-padded" style="padding-bottom: 0;">
+    <div class="nav-header">
+        <button class="nav-back-btn" onclick="showScreen('screen-menu')">← Меню</button>
+        <div style="font-weight: 800; font-size: 18px;">Дорога фермера</div>
+        <div class="coin-balance" style="padding: 4px 10px; font-size: 13px;">🪙 <span class="coin-val">0</span></div>
+    </div>
+    <div class="map-container" id="levels-container"></div>
+</div>
+
+<!-- ФЕРМА -->
+<div id="screen-farm" class="screen screen-padded" style="padding-bottom: 0;">
+    <div class="nav-header">
+        <button class="nav-back-btn" onclick="showScreen('screen-menu')">← Меню</button>
+        <div class="header-badges">
+            <div class="badge-ui" onclick="openBarnHeader()">📦 <span id="storage-count">0/50</span></div>
+            <div class="badge-ui" style="background:#FFF8E1; border-color:#FFC107; color:#F57F17;" onclick="openMarketHeader()">🏪 РЫНОК</div>
+        </div>
+        <div class="coin-balance" style="padding: 4px 10px; font-size: 13px;">🪙 <span class="coin-val">0</span></div>
+    </div>
+    
+    <div id="placement-banner" style="display:none; position:absolute; top:80px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); color:white; padding:12px 24px; border-radius:24px; z-index:300; font-weight:800; white-space:nowrap; align-items:center; gap:12px; box-shadow: 0 8px 20px rgba(0,0,0,0.3);">
+        Осталось: <span id="place-qty">0</span> 📌
+        <button onclick="cancelPlacement()" style="background:#E53935; border:none; color:white; border-radius:50%; width:28px; height:28px; font-weight:bold; cursor:pointer;">✖</button>
+    </div>
+
+    <div id="farm-viewport" class="farm-viewport">
+        <div id="farm-world" class="farm-world">
+            <div class="cloud-layer" style="top: 150px; animation-duration: 80s;"><img src="img/cloud1.png" style="width: 300px;" onerror="this.style.display='none';"><span style="display:none; font-size: 80px;">☁️</span></div>
+            <div class="cloud-layer" style="top: 800px; animation-duration: 110s; animation-delay: -30s;"><img src="img/cloud2.png" style="width: 400px;" onerror="this.style.display='none';"><span style="display:none; font-size: 120px;">☁️</span></div>
+            <div id="farm-items-container" style="position: absolute; top:0; left:0; width:100%; height:100%;"></div>
+        </div>
+        <button class="btn btn-accent farm-build-btn" onclick="openBuildMenu()">🛒 МАГАЗИН И СТРОЙКА</button>
+    </div>
+
+    <div class="drawer-overlay" id="drawer-overlay" onclick="closeBuildMenu()"></div>
+    <div class="build-drawer" id="build-drawer">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div style="font-size: 18px; font-weight: 900; color: #263326;">Магазин</div>
+            <button style="background: rgba(0,0,0,0.05); border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 14px; font-weight: 800; cursor: pointer; color: #555;" onclick="closeBuildMenu()">✖</button>
+        </div>
+        <div id="drawer-items"></div>
+    </div>
+</div>
+
+<!-- БЛОГ -->
+<div id="screen-blog" class="screen screen-padded" style="padding-bottom: 0;">
+    <div class="nav-header">
+        <button class="nav-back-btn" onclick="showScreen('screen-menu')">← Меню</button>
+        <div style="font-weight: 800; font-size: 18px;">Блог</div>
+        <div style="width: 60px;"></div>
+    </div>
+    <div class="blog-feed" id="blog-container"></div>
+</div>
+
+<!-- ТРИ-В-РЯД И МАСКОТ -->
+<div id="screen-game" class="screen screen-padded">
+    <div class="nav-header" style="margin-bottom: 8px;">
+        <button class="nav-back-btn" onclick="showScreen('screen-levels')">← Карта</button>
+        <div id="game-level-indicator" style="font-weight: 800; font-size: 16px;">Уровень 1</div>
+        <div class="coin-balance" style="padding: 4px 10px; font-size: 13px;">🪙 <span class="coin-val">0</span></div>
+    </div>
+    <div class="status-card">
+        <div id="target-label" style="display: flex; align-items: center; gap: 6px;">
+            <div id="target-icon" style="width: 24px; height: 24px; display: flex; align-items: center;"></div>
+            <span id="target-count">0/30</span>
+        </div>
+        <div id="moves-label">Ходы: 20</div>
+    </div>
+    <div id="message" class="message">Свайпни фрукты!</div>
+    <div id="board" class="board"></div>
+    <button class="btn btn-secondary" style="padding: 12px; font-size: 14px; margin-top: 10px;" onclick="showScreen('screen-levels')">Сдаться и выйти</button>
+    
+    <div style="flex: 1; display: flex; justify-content: center; align-items: flex-end; margin-top: 15px; pointer-events: none;">
+        <img src="img/cow.png" style="max-height: 140px; width: auto; object-fit: contain; filter: drop-shadow(0 5px 15px rgba(0,0,0,0.3));" onerror="this.style.display='none';">
+    </div>
+</div>
+
+<!-- КОЛЛЕКЦИЯ -->
+<div id="screen-collection" class="screen screen-padded">
+    <div class="nav-header">
+        <button class="nav-back-btn" onclick="showScreen('screen-menu')">← Меню</button>
+        <div style="font-weight: 800; font-size: 18px;">Коллекция</div>
+        <div style="width: 60px;"></div>
+    </div>
+    <div class="collection-grid" id="collection-container"></div>
+</div>
+</div>
+
+<!-- Модалки -->
+<div id="prelevel-modal" class="modal">
+<div class="modal-content" style="max-width: 340px;">
+    <h2 id="prelevel-title" style="margin-top: 0; font-size: 26px; color: #263326; margin-bottom: 20px;">Уровень 1</h2>
+    <div class="target-wrap"><div class="target-img-wrap" id="prelevel-icon"></div><span id="prelevel-count" style="color: #436932;"></span><span id="prelevel-moves" style="margin-left: 10px; font-size: 18px; color: #666;"></span></div>
+    <div style="font-size: 14px; font-weight: 700; color: #333;">Нужна помощь? Возьми бустеры:</div>
+    <div class="booster-grid">
+        <div class="booster-card" id="boost-bomb" onclick="toggleBooster('bomb')"><div class="booster-check">✓</div><div class="booster-icon">💣</div><div class="booster-price">30 🪙</div></div>
+        <div class="booster-card" id="boost-plane" onclick="toggleBooster('plane')"><div class="booster-check">✓</div><div class="booster-icon">✈️</div><div class="booster-price">30 🪙</div></div>
+        <div class="booster-card" id="boost-moves" onclick="toggleBooster('moves')"><div class="booster-check">✓</div><div class="booster-icon">👟</div><div class="booster-price">40 🪙</div></div>
+    </div>
+    <button class="btn btn-accent" onclick="startLevelFromModal()" style="margin-top: 10px; font-size: 18px;">ИГРАТЬ</button>
+    <button class="btn btn-secondary" onclick="closePreLevel()" style="margin-top: 10px;">Назад на карту</button>
+</div>
+</div>
+
+<div id="modal" class="modal"><div class="modal-content"><h2 id="modal-title" style="margin-top: 0; font-size: 22px;">...</h2><div id="modal-text" style="font-size: 14px; color: #555; margin: 10px 0;">...</div><div id="reward-box" style="width: 70px; height: 70px; margin: 15px auto; display: none; align-items: center; justify-content: center; font-size: 44px;"></div><button id="modal-btn" class="btn btn-accent" onclick="closeModal()">...</button><button id="modal-btn-secondary" class="btn btn-secondary" style="display:none; margin-top:10px;">...</button></div></div>
+
+<div id="quiz-modal" class="modal">
+<div class="modal-content">
+    <h2 id="quiz-modal-title" style="margin-top: 0; font-size: 20px; color: #FF8F00;">Экзамен! 🌱</h2>
+    <p id="quiz-modal-desc" style="font-size: 14px; color: #555; margin-bottom: 15px;">Ответь на вопрос...</p>
+    <div id="quiz-q" style="font-weight: 800; font-size: 16px; margin-bottom: 15px; line-height: 1.3;"></div>
+    <div id="quiz-options" style="display: flex; flex-direction: column; gap: 8px;"></div>
+    <button id="quiz-close-btn" class="btn btn-secondary" style="margin-top: 15px;" onclick="failQuiz()">Отмена</button>
+</div>
+</div>
+
+<div id="video-modal" class="modal">
+<div class="modal-content" style="max-width: 95%; width: 400px; padding: 15px; background: #1a1a1a; color: #fff; border: 1px solid #333;">
+    <h3 id="video-title" style="margin-top: 0; font-size: 18px; margin-bottom: 12px;">Ролик</h3>
+    <div id="video-container" style="background: #000; height: 420px; border-radius: 8px; margin-bottom: 16px; overflow:hidden;"></div>
+    <button class="btn" style="background: #333; color: #FFF; box-shadow: none;" onclick="closeVideo()">Закрыть</button>
+</div>
+</div>
+
+</body>
+</html>

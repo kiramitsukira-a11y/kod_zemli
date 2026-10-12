@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Код земли</title>
+    <!-- Подключаем библиотеку VK Bridge -->
+    <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+    <style>
+        body {
+            background-color: #f2f0e7; color: #263326;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 10px;
+            touch-action: manipulation; /* Блокировка зума на мобилках */
+        }
+        .game-container { background: #ffffff; padding: 20px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 420px; width: 100%; position: relative; }
+        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        h1 { font-size: 20px; margin: 0; color: #263326; }
+        .collection-btn { background: #e1e8dc; color: #435c3c; border: none; padding: 6px 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; }
+        .collection-btn:hover { background: #dce2d4; }
+        .status-card { background: #dce2d4; padding: 12px; border-radius: 12px; margin-bottom: 15px; display: flex; justify-content: space-around; font-size: 16px; font-weight: bold; align-items: center; }
+        .board { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; background: #dce2d4; padding: 8px; border-radius: 12px; aspect-ratio: 1; margin-bottom: 15px; }
+        .cell { background: #ffffff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; user-select: none; transition: transform 0.1s, background-color 0.15s; }
+        .cell.selected { background: #cce0bd; transform: scale(0.92); box-shadow: inset 0 0 0 2px #71965c; }
+        .message { font-size: 13px; color: #555; min-height: 20px; margin-bottom: 12px; font-weight: 500; }
+        .btn { background: #71965c; color: white; border: none; padding: 10px 20px; font-size: 14px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 8px; }
+        .btn:hover { background: #5d7e4b; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: white; padding: 25px; border-radius: 14px; text-align: center; max-width: 300px; width: 90%; }
+        .modal-content h2 { margin-top: 0; color: #263326; }
+        .collection-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
+        .collection-item { background: #f2f0e7; border-radius: 8px; padding: 10px; font-size: 30px; opacity: 0.3; filter: grayscale(100%); transition: all 0.3s; }
+        .collection-item.unlocked { opacity: 1; filter: grayscale(0%); background: #e8f0e1; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="game-container">
+    <div class="header-top">
+        <h1>Код земли</h1>
+        <button class="collection-btn" onclick="openCollection()" id="collection-btn">Коллекция 0/5</button>
+    </div>
+
+    <div class="status-card">
+        <div id="level-label">Ур. 1</div>
+        <div id="target-label">🍑 0/30</div>
+        <div id="moves-label">Ходы: 20</div>
+    </div>
+
+    <div id="message" class="message">Собери нужный урожай!</div>
+    <div id="board" class="board"></div>
+    <button class="btn" onclick="restartLevel()">Начать уровень заново</button>
+</div>
+
+<!-- Модальное окно завершения/поражения -->
+<div id="modal" class="modal">
+    <div class="modal-content">
+        <h2 id="modal-title">...</h2>
+        <p id="modal-text">...</p>
+        <div id="reward-box" style="font-size: 40px; margin: 10px 0; display: none;"></div>
+        <button id="modal-btn" class="btn" onclick="closeModal()">...</button>
+    </div>
+</div>
+
+<!-- Модальное окно Коллекции -->
+<div id="collection-modal" class="modal">
+    <div class="modal-content">
+        <h2>Моя коллекция</h2>
+        <p style="font-size: 13px; color: #555;">Открывай предметы за прохождение уровней!</p>
+        <div class="collection-grid" id="collection-grid">
+            <!-- Генерируется скриптом -->
+        </div>
+        <button class="btn" style="margin-top: 20px;" onclick="closeCollection()">Закрыть</button>
+    </div>
+</div>
+
+<script>
+    // Инициализация VK Bridge
+    vkBridge.send('VKWebAppInit');
+
+    const SIZE = 8;
+    const TYPES = ["plum", "cherry", "strawberry", "bread", "tractor"];
+    const ICON = { plum: "🍑", cherry: "🍒", strawberry: "🍓", bread: "🍞", tractor: "🚜" };
+    const SPECIAL_ICON = { arrowH: "↔️", arrowV: "↕️", bomb: "💣", plane: "✈️" };
+
+    // Настройки уровней
+    const LEVELS = [
+        { targetItem: "plum", targetCount: 15, moves: 15, reward: null },
+        { targetItem: "cherry", targetCount: 20, moves: 18, reward: "plum" }, // Награда на 2 уровне для теста
+        { targetItem: "strawberry", targetCount: 25, moves: 20, reward: null },
+        { targetItem: "bread", targetCount: 30, moves: 22, reward: "cherry" },
+        { targetItem: "tractor", targetCount: 35, moves: 25, reward: "strawberry" }
+    ];
+
+    let currentLevel = 0; // Индекс в массиве LEVELS
+    let board = [], selected = null, busy = false, finished = false;
+    let moves = 0, collectedCount = 0;
+    
+    // Коллекция игрока (храним открытые type)
+    let unlockedItems = []; 
+
+    function initLevel() {
+        let lvl = LEVELS[currentLevel] || LEVELS[LEVELS.length - 1];
+        moves = lvl.moves;
+        collectedCount = 0;
+        finished = false;
+        busy = false;
+        selected = null;
+        createBoard();
+        updateUI();
+    }
+
+    function createBoard() {
+        do {
+            board = [];
+            for (let r = 0; r < SIZE; r++) {
+                let row = [];
+                for (let c = 0; c < SIZE; c++) {
+                    let type;
+                    do { type = TYPES[Math.floor(Math.random() * TYPES.length)]; } 
+                    while ((c >= 2 && row[c-1].type === type && row[c-2].type === type) ||
+                           (r >= 2 && board[r-1][c].type === type && board[r-2][c].type === type));
+                    row.push({ type: type, special: null });
+                }
+                board.push(row);
+            }
+        } while (findInitialMatches().length > 0);
+    }
+
+    function renderBoard() {
+        const boardEl = document.getElementById("board");
+        boardEl.innerHTML = "";
+        for (let r = 0; r < SIZE; r++) {
+            for (let c = 0; c < SIZE; c++) {
+                const cell = document.createElement("div");
+                cell.className = "cell";
+                if (selected && selected.r === r && selected.c === c) cell.classList.add("selected");
+                const item = board[r][c];
+                if (item) cell.innerText = item.special ? SPECIAL_ICON[item.special] : ICON[item.type];
+                cell.onclick = () => handleCellClick(r, c);
+                boardEl.appendChild(cell);
+            }
+        }
+    }
+
+    function updateUI() {
+        let lvl = LEVELS[currentLevel] || LEVELS[LEVELS.length - 1];
+        document.getElementById("level-label").innerText = `Ур. ${currentLevel + 1}`;
+        document.getElementById("target-label").innerText = `${ICON[lvl.targetItem]} ${collectedCount}/${lvl.targetCount}`;
+        document.getElementById("moves-label").innerText = `Ходы: ${moves}`;
+        document.getElementById("collection-btn").innerText = `Коллекция ${unlockedItems.length}/${TYPES.length}`;
+        renderBoard();
+    }
+
+    function setMessage(text) { document.getElementById("message").innerText = text; }
+
+    // Логика удаления (засчитываем ТОЛЬКО целевой элемент текущего уровня)
+    function collectItem(item) {
+        let lvl = LEVELS[currentLevel] || LEVELS[LEVELS.length - 1];
+        if (item && item.type === lvl.targetItem) {
+            collectedCount++;
+        }
+    }
+
+    function handleCellClick(r, c) {
+        if (busy || finished) return;
+        if (!selected) { selected = { r, c }; renderBoard(); setMessage(""); return; }
+        if (selected.r === r && selected.c === c) { selected = null; renderBoard(); return; }
+        if ((Math.abs(selected.r - r) + Math.abs(selected.c - c)) === 1) executeSwapAndCheck(selected.r, selected.c, r, c);
+        else { selected = { r, c }; renderBoard(); return; }
+        selected = null;
+    }
+
+    function executeSwapAndCheck(r1, c1, r2, c2) {
+        busy = true;
+        let temp = board[r1][c1]; board[r1][c1] = board[r2][c2]; board[r2][c2] = temp;
+        const item1 = board[r1][c1], item2 = board[r2][c2];
+
+        if (item1.special && item2.special) { moves--; handleSpecialCombination(r1, c1, r2, c2); return; }
+        if (item1.special || item2.special) {
+            moves--;
+            if (item1.special) activateSpecial(r1, c1); else activateSpecial(r2, c2);
+            dropAndFill(false); return;
+        }
+
+        let matches = findAllMatches();
+        if (matches.length === 0) {
+            temp = board[r1][c1]; board[r1][c1] = board[r2][c2]; board[r2][c2] = temp;
+            renderBoard(); setMessage("Этот обмен не создаёт комбинацию"); busy = false;
+        } else {
+            moves--; setMessage(""); processPlayerMatches(r2, c2, matches);
+        }
+    }
+
+    function findAllMatches() {
+        let matchedCoords = new Set();
+        for (let r = 0; r < SIZE; r++) {
+            let count = 1;
+            for (let c = 0; c < SIZE; c++) {
+                let cur = board[r][c]?.type, next = (c + 1 < SIZE) ? board[r][c+1]?.type : null;
+                if (cur && cur === next) count++;
+                else { if (count >= 3) { for (let i = 0; i < count; i++) matchedCoords.add(`${r},${c - i}`); } count = 1; }
+            }
+        }
+        for (let c = 0; c < SIZE; c++) {
+            let count = 1;
+            for (let r = 0; r < SIZE; r++) {
+                let cur = board[r][c]?.type, next = (r + 1 < SIZE) ? board[r+1][c]?.type : null;
+                if (cur && cur === next) count++;
+                else { if (count >= 3) { for (let i = 0; i < count; i++) matchedCoords.add(`${r - i},${c}`); } count = 1; }
+            }
+        }
+        for (let r = 0; r < SIZE - 1; r++) {
+            for (let c = 0; c < SIZE - 1; c++) {
+                let t = board[r][c]?.type;
+                if (t && board[r+1][c]?.type === t && board[r][c+1]?.type === t && board[r+1][c+1]?.type === t) {
+                    matchedCoords.add(`${r},${c}`); matchedCoords.add(`${r+1},${c}`);
+                    matchedCoords.add(`${r},${c+1}`); matchedCoords.add(`${r+1},${c+1}`);
+                }
+            }
+        }
+        let res = []; matchedCoords.forEach(item => { let p = item.split(","); res.push({ r: parseInt(p[0]), c: parseInt(p[1]) }); });
+        return res;
+    }
+
+    function findInitialMatches() {
+        let m = [];
+        for (let r = 0; r < SIZE; r++) {
+            for (let c = 0; c < SIZE - 2; c++) { if (board[r][c].type === board[r][c+1].type && board[r][c].type === board[r][c+2].type) m.push({r, c}); }
+        }
+        for (let c = 0; c < SIZE; c++) {
+            for (let r = 0; r < SIZE - 2; r++) { if (board[r][c].type === board[r+1][c].type && board[r][c].type === board[r+2][c].type) m.push({r, c}); }
+        }
+        return m;
+    }
+
+    function processPlayerMatches(targetR, targetC, matches) {
+        let createdSpecial = checkAndCreateSpecial(targetR, targetC);
+        matches.forEach(m => {
+            if (createdSpecial && createdSpecial.r === m.r && createdSpecial.c === m.c) return;
+            if (board[m.r][m.c]) collectItem(board[m.r][m.c]);
+            board[m.r][m.c] = null;
+        });
+        renderBoard(); setTimeout(() => dropAndFill(true), 250);
+    }
+
+    function checkAndCreateSpecial(r, c) {
+        for (let dr = -1; dr <= 0; dr++) {
+            for (let dc = -1; dc <= 0; dc++) {
+                let r1 = r + dr, c1 = c + dc;
+                if (r1 >= 0 && r1 < SIZE - 1 && c1 >= 0 && c1 < SIZE - 1) {
+                    let type = board[r1][c1]?.type;
+                    if (type && board[r1+1][c1]?.type === type && board[r1][c1+1]?.type === type && board[r1+1][c1+1]?.type === type) {
+                        board[r][c] = { type: type, special: "plane" }; return { r, c };
+                    }
+                }
+            }
+        }
+        let type = board[r][c]?.type; if (!type) return null;
+        let rowCount = 0, colCount = 0;
+        for (let cc = 0; cc < SIZE; cc++) if (board[r][cc]?.type === type) rowCount++;
+        for (let rr = 0; rr < SIZE; rr++) if (board[rr][c]?.type === type) colCount++;
+
+        if (rowCount >= 5 || colCount >= 5 || (rowCount >= 3 && colCount >= 3)) { board[r][c] = { type: type, special: "bomb" }; return { r, c }; }
+        if (rowCount === 4) { board[r][c] = { type: type, special: "arrowH" }; return { r, c }; }
+        if (colCount === 4) { board[r][c] = { type: type, special: "arrowV" }; return { r, c }; }
+        return null;
+    }
+
+    function activateSpecial(r, c) {
+        let item = board[r][c]; if (!item || !item.special) return;
+        let spec = item.special; collectItem(item); board[r][c] = null;
+
+        if (spec === "arrowH") {
+            for (let col = 0; col < SIZE; col++) if (board[r][col]) { collectItem(board[r][col]); board[r][col] = null; }
+        } else if (spec === "arrowV") {
+            for (let row = 0; row < SIZE; row++) if (board[row][c]) { collectItem(board[row][c]); board[row][c] = null; }
+        } else if (spec === "bomb") {
+            for (let dr = -2; dr <= 2; dr++) {
+                for (let dc = -2; dc <= 2; dc++) {
+                    let nr = r + dr, nc = c + dc;
+                    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc]) { collectItem(board[nr][nc]); board[nr][nc] = null; }
+                }
+            }
+        } else if (spec === "plane") {
+            let tr = Math.floor(Math.random() * SIZE), tc = Math.floor(Math.random() * SIZE);
+            if (board[tr][tc]) { collectItem(board[tr][tc]); board[tr][tc] = null; }
+        }
+    }
+
+    function handleSpecialCombination(r1, c1, r2, c2) { activateSpecial(r1, c1); activateSpecial(r2, c2); dropAndFill(false); }
+
+    function dropAndFill(isAfterPlayerMove) {
+        for (let c = 0; c < SIZE; c++) {
+            let remaining = [];
+            for (let r = SIZE - 1; r >= 0; r--) { if (board[r][c] !== null) remaining.push(board[r][c]); }
+            let writeRow = SIZE - 1;
+            for (let i = 0; i < remaining.length; i++) { board[writeRow][c] = remaining[i]; writeRow--; }
+            while (writeRow >= 0) { board[writeRow][c] = { type: TYPES[Math.floor(Math.random() * TYPES.length)], special: null }; writeRow--; }
+        }
+        renderBoard();
+        let cascadeMatches = findAllMatches();
+        if (cascadeMatches.length > 0) {
+            setTimeout(() => {
+                cascadeMatches.forEach(m => { if (board[m.r][m.c]) collectItem(board[m.r][m.c]); board[m.r][m.c] = null; });
+                renderBoard(); setTimeout(() => dropAndFill(false), 250);
+            }, 300);
+        } else { checkGameEnd(); busy = false; }
+    }
+
+    function checkGameEnd() {
+        updateUI();
+        let lvl = LEVELS[currentLevel] || LEVELS[LEVELS.length - 1];
+        if (collectedCount >= lvl.targetCount) {
+            finished = true;
+            let rewardHTML = "";
+            
+            // Выдача награды
+            if (lvl.reward && !unlockedItems.includes(lvl.reward)) {
+                unlockedItems.push(lvl.reward);
+                rewardHTML = `Открыт предмет: ${ICON[lvl.reward]}`;
+                document.getElementById("reward-box").style.display = "block";
+                document.getElementById("reward-box").innerText = ICON[lvl.reward];
+                updateCollectionUI();
+            } else {
+                document.getElementById("reward-box").style.display = "none";
+            }
+
+            showModal("Уровень пройден!", `Отличная работа.\n${rewardHTML}`, "Следующий уровень", () => {
+                currentLevel++;
+                closeModal();
+                initLevel();
+            });
+        } else if (moves <= 0) {
+            finished = true;
+            document.getElementById("reward-box").style.display = "none";
+            showModal("Ходы закончились", "Не хватило совсем чуть-чуть.", "Попробовать снова", () => {
+                closeModal();
+                initLevel();
+            });
+        }
+    }
+
+    function showModal(title, text, btnText, callback) {
+        document.getElementById("modal-title").innerText = title;
+        document.getElementById("modal-text").innerText = text;
+        let btn = document.getElementById("modal-btn");
+        btn.innerText = btnText;
+        btn.onclick = callback;
+        document.getElementById("modal").style.display = "flex";
+    }
+
+    function closeModal() { document.getElementById("modal").style.display = "none"; }
+    function restartLevel() { initLevel(); }
+
+    function openCollection() {
+        updateCollectionUI();
+        document.getElementById("collection-modal").style.display = "flex";
+    }
+    function closeCollection() { document.getElementById("collection-modal").style.display = "none"; }
+
+    function updateCollectionUI() {
+        const grid = document.getElementById("collection-grid");
+        grid.innerHTML = "";
+        TYPES.forEach(type => {
+            let div = document.createElement("div");
+            div.className = "collection-item " + (unlockedItems.includes(type) ? "unlocked" : "");
+            div.innerText = ICON[type];
+            // Здесь в будущем можно добавить открытие видео ВКонтакте по клику
+            grid.appendChild(div);
+        });
+    }
+
+    initLevel();
+</script>
+</body>
+</html>
